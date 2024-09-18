@@ -57,7 +57,7 @@ A misguided attempt to recreate the Texture Ripper tool from ShoeBox with the po
   `pip install -r requirements.txt`
 
 **4: Run the Application:**
-`python texture_ripper.py
+`python texture_ripper.py`
 
 **OR** download the binary from the [Releases](https://github.com/rpalmerdev/Texture-Ripper/releases/tag/v1.0.0) page. (Windows)
 
