@@ -13,6 +13,7 @@ This is **not** an amazing program, but it gets the job done, more-or-less.
 
 - **Load an Image:**
     - Click the **"Load Image"** button and select the image file.
+- **Click four points on the image** to define the first texture you would like to extract.
 - **Add a Selection Set:**
     - Click the **"Add Selection Set"** button to start defining a new texture area.
 - **Select Points:**
