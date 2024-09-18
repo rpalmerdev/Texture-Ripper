@@ -64,4 +64,5 @@ A misguided attempt to recreate the Texture Ripper tool from ShoeBox with the po
 # Limitations:
 
 - Currently does not support using curved lines for texture extraction like ShoeBox does.
+- Texture packing method is pretty simple/unoptimized. 
 - I should have implemented a dark/light mode toggle, but I didn't. Coming soon™
