@@ -1,6 +1,8 @@
 # Texture-Ripper
 A misguided attempt to recreate the Texture Ripper tool from ShoeBox with the power of ChatGPT
 
+![2024-09-18 10_17_20-Settings](https://github.com/user-attachments/assets/17da90ec-4a2d-43b1-bd3f-53facecc2e92)
+
 # How to Use:
 
 - **Load an Image:**
