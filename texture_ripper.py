@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import filedialog
+from tkinter import filedialog, messagebox
 from PIL import Image, ImageTk
 import cv2
 import numpy as np
@@ -13,31 +13,30 @@ class TextureRipperApp:
         self.image = None
         self.image_path = None
         self.canvas_image = None
-        self.points = []  # Primary points
-        self.secondary_points = {}  # Secondary points, between primary points
-        self.selected_point = None
-        self.curve_mode = False  # Default to straight lines
+        self.selection_sets = []  # List of selection sets
+        self.current_selection_set_index = None
         self.zoom_level = 1.0  # Default zoom level (1.0 = no zoom)
         self.canvas_offset_x = 0  # For tracking canvas movement during zoom/pan
         self.canvas_offset_y = 0
         self.pan_start_x = 0  # For tracking the starting point of the pan
         self.pan_start_y = 0
         self.is_panning = False  # Whether we are currently panning
-        self.extracted_image = None  # Holds the current extracted image
+        self.map_image = None  # Composite image (map) of all extracted textures
+        self.zoom_active = False  # Whether zoom mode is active
 
-        # Layout setup
+        # Create the main frames
         self.main_frame = tk.Frame(root)
         self.main_frame.pack(side=tk.TOP, padx=10, pady=10)
 
-        # Canvas dimensions (assuming 800x600 for now)
+        # Set initial canvas dimensions
         self.canvas_width = 800
         self.canvas_height = 600
 
         # Create canvas for displaying the main image
-        self.canvas = tk.Canvas(self.main_frame, width=self.canvas_width, height=self.canvas_height)
+        self.canvas = tk.Canvas(self.main_frame, width=self.canvas_width, height=self.canvas_height, bg='gray')
         self.canvas.pack(side=tk.LEFT)
 
-        # Create area for displaying the extracted texture (larger canvas)
+        # Create area for displaying the extracted texture map
         self.extracted_canvas = tk.Canvas(self.main_frame, width=400, height=400, bg="gray")
         self.extracted_canvas.pack(side=tk.LEFT, padx=10)
 
@@ -49,157 +48,201 @@ class TextureRipperApp:
         self.load_button = tk.Button(self.button_frame, text="Load Image", command=self.load_image)
         self.load_button.pack(side=tk.LEFT, padx=5)
 
+        self.add_selection_set_button = tk.Button(self.button_frame, text="Add Selection Set", command=self.add_selection_set)
+        self.add_selection_set_button.pack(side=tk.LEFT, padx=5)
+
+        self.prev_selection_set_button = tk.Button(self.button_frame, text="Previous Set", command=self.prev_selection_set)
+        self.prev_selection_set_button.pack(side=tk.LEFT, padx=5)
+
+        self.next_selection_set_button = tk.Button(self.button_frame, text="Next Set", command=self.next_selection_set)
+        self.next_selection_set_button.pack(side=tk.LEFT, padx=5)
+
         self.extract_button = tk.Button(self.button_frame, text="Extract Texture", command=self.extract_texture)
         self.extract_button.pack(side=tk.LEFT, padx=5)
 
-        self.save_button = tk.Button(self.button_frame, text="Save As", command=self.save_extracted_texture)
+        self.save_button = tk.Button(self.button_frame, text="Save As", command=self.save_texture_map)
         self.save_button.pack(side=tk.LEFT, padx=5)
-
-        self.toggle_curve_button = tk.Button(self.button_frame, text="Toggle Curves", command=self.toggle_curves)
-        self.toggle_curve_button.pack(side=tk.LEFT, padx=5)
 
         self.reset_button = tk.Button(self.button_frame, text="Reset View", command=self.reset_view)
         self.reset_button.pack(side=tk.LEFT, padx=5)
 
-        self.clear_button = tk.Button(self.button_frame, text="Clear Points", command=self.clear_points)
-        self.clear_button.pack(side=tk.LEFT, padx=5)
+        self.clear_points_button = tk.Button(self.button_frame, text="Clear Points", command=self.clear_points)
+        self.clear_points_button.pack(side=tk.LEFT, padx=5)
+
+        self.clear_map_button = tk.Button(self.button_frame, text="Clear Map", command=self.clear_map)
+        self.clear_map_button.pack(side=tk.LEFT, padx=5)
 
         # Bind mouse events for adding points, panning, zooming, and dragging
         self.canvas.bind("<Button-1>", self.add_or_select_point)
         self.canvas.bind("<B1-Motion>", self.drag_point)
         self.canvas.bind("<ButtonRelease-1>", self.release_point)
         self.canvas.bind("<MouseWheel>", self.zoom_image)
+        self.canvas.bind("<Button-4>", self.zoom_image)  # For Linux scroll up
+        self.canvas.bind("<Button-5>", self.zoom_image)  # For Linux scroll down
         self.canvas.bind("<ButtonPress-2>", self.start_pan)  # Middle mouse button press
         self.canvas.bind("<B2-Motion>", self.pan_image)  # Middle mouse button drag
         self.canvas.bind("<ButtonRelease-2>", self.end_pan)  # Middle mouse button release
+        self.canvas.bind("<ButtonPress-3>", self.start_pan)  # Right mouse button press as alternative to middle button
+        self.canvas.bind("<B3-Motion>", self.pan_image)  # Right mouse button drag
+        self.canvas.bind("<ButtonRelease-3>", self.end_pan)  # Right mouse button release
         self.root.bind("<Control_L>", self.enable_zoom_mode)
         self.root.bind("<Control_R>", self.enable_zoom_mode)
         self.root.bind("<KeyRelease-Control_L>", self.disable_zoom_mode)
         self.root.bind("<KeyRelease-Control_R>", self.disable_zoom_mode)
 
-        self.zoom_active = False  # Whether zoom mode is active
-
     def load_image(self):
         """Load an image file."""
-        self.image_path = filedialog.askopenfilename(filetypes=[("Image Files", "*.png;*.jpg;*.jpeg")])
+        self.image_path = filedialog.askopenfilename(filetypes=[("Image Files", "*.png;*.jpg;*.jpeg;*.bmp")])
         if not self.image_path:
             return
-        self.image = Image.open(self.image_path)
-        self.zoom_level = 1.0  # Reset zoom when loading a new image
+        try:
+            self.image = Image.open(self.image_path)
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to open image:\n{e}")
+            return
+
+        # Reset variables
+        self.zoom_level = 1.0
         self.canvas_offset_x = 0
         self.canvas_offset_y = 0
+        self.selection_sets = []
+        self.current_selection_set_index = None
+        self.map_image = None
+        self.extracted_canvas.delete("all")
+        self.canvas.delete("all")
+
+        # Get image dimensions
+        self.img_width, self.img_height = self.image.size
+
+        # Adjust canvas size based on image size while maintaining aspect ratio
+        self.scale = min(self.canvas_width / self.img_width, self.canvas_height / self.img_height)
+        self.canvas.config(width=self.canvas_width, height=self.canvas_height)
+
         self.display_image()
 
     def display_image(self):
         """Display the image on the canvas, accounting for zoom and panning."""
         if self.image:
-            zoomed_width = int(self.canvas_width * self.zoom_level)
-            zoomed_height = int(self.canvas_height * self.zoom_level)
-            resized_image = self.image.resize((zoomed_width, zoomed_height), Image.LANCZOS)
+            # Calculate scaled dimensions
+            scaled_width = int(self.img_width * self.scale * self.zoom_level)
+            scaled_height = int(self.img_height * self.scale * self.zoom_level)
+
+            # Resize the image
+            resized_image = self.image.resize((scaled_width, scaled_height), Image.LANCZOS)
             self.canvas_image = ImageTk.PhotoImage(resized_image)
+
+            # Clear the canvas and display the image
+            self.canvas.delete("all")
             self.canvas.create_image(self.canvas_offset_x, self.canvas_offset_y, anchor=tk.NW, image=self.canvas_image)
             self.draw_grid()
 
+    def image_to_canvas_coords(self, x, y):
+        """Convert image coordinates to canvas coordinates."""
+        canvas_x = x * self.scale * self.zoom_level + self.canvas_offset_x
+        canvas_y = y * self.scale * self.zoom_level + self.canvas_offset_y
+        return canvas_x, canvas_y
+
+    def canvas_to_image_coords(self, x, y):
+        """Convert canvas coordinates to image coordinates."""
+        img_x = (x - self.canvas_offset_x) / (self.scale * self.zoom_level)
+        img_y = (y - self.canvas_offset_y) / (self.scale * self.zoom_level)
+        return img_x, img_y
+
     def draw_grid(self):
-        """Draw the quadrilateral grid with either straight lines or curves."""
+        """Draw the quadrilateral grid for the current selection set."""
         self.canvas.delete("grid")
-        for i, point in enumerate(self.points):
-            # Scale points according to zoom level
-            zoomed_x = point[0] * self.zoom_level + self.canvas_offset_x
-            zoomed_y = point[1] * self.zoom_level + self.canvas_offset_y
+        if self.current_selection_set_index is not None:
+            selection_set = self.selection_sets[self.current_selection_set_index]
+            points = selection_set['points']
+            # Draw primary points
+            for i, point in enumerate(points):
+                canvas_x, canvas_y = self.image_to_canvas_coords(*point)
+                self.canvas.create_oval(canvas_x - 5, canvas_y - 5, canvas_x + 5, canvas_y + 5,
+                                        outline='red', width=2, tags="grid")
 
-            # Draw primary points immediately after they are added
-            self.canvas.create_oval(zoomed_x-5, zoomed_y-5, zoomed_x+5, zoomed_y+5, outline='red', width=2, tags="grid")
+            if len(points) == 4:
+                # Draw lines between points
+                for i in range(4):
+                    p1 = points[i]
+                    p2 = points[(i + 1) % 4]
 
-        if len(self.points) == 4:
-            # Draw straight lines or curves based on the toggle state
-            for i in range(4):
-                p1 = self.points[i]
-                p2 = self.points[(i+1) % 4]
+                    # Draw straight lines
+                    canvas_x1, canvas_y1 = self.image_to_canvas_coords(*p1)
+                    canvas_x2, canvas_y2 = self.image_to_canvas_coords(*p2)
+                    self.canvas.create_line(canvas_x1, canvas_y1, canvas_x2, canvas_y2,
+                                            fill='green', width=2, tags="grid")
 
-                if self.curve_mode:
-                    # If curve mode is on, use quadratic Bézier curves
-                    if i in self.secondary_points:
-                        sec_point = self.secondary_points[i]
-                    else:
-                        sec_point = ((p1[0] + p2[0]) // 2, (p1[1] + p2[1]) // 2)
-                        self.secondary_points[i] = sec_point
-
-                    # Draw the Bézier curve
-                    self.draw_bezier_curve(p1, sec_point, p2)
-
-                    # Draw secondary points
-                    zoomed_sec_x = sec_point[0] * self.zoom_level + self.canvas_offset_x
-                    zoomed_sec_y = sec_point[1] * self.zoom_level + self.canvas_offset_y
-                    self.canvas.create_oval(zoomed_sec_x-5, zoomed_sec_y-5, zoomed_sec_x+5, zoomed_sec_y+5, outline='blue', width=2, tags="grid")
-                else:
-                    # If curve mode is off, draw straight lines
-                    zoomed_x1 = p1[0] * self.zoom_level + self.canvas_offset_x
-                    zoomed_y1 = p1[1] * self.zoom_level + self.canvas_offset_y
-                    zoomed_x2 = p2[0] * self.zoom_level + self.canvas_offset_x
-                    zoomed_y2 = p2[1] * self.zoom_level + self.canvas_offset_y
-                    self.canvas.create_line(zoomed_x1, zoomed_y1, zoomed_x2, zoomed_y2, fill='green', width=2, tags="grid")
-
-    def draw_bezier_curve(self, p1, p2, p3):
-        """Draw a quadratic Bézier curve between three points."""
-        steps = 50  # Number of points to calculate for the curve
-        for t in range(steps):
-            t /= steps
-            x = (1 - t)**2 * p1[0] + 2 * (1 - t) * t * p2[0] + t**2 * p3[0]
-            y = (1 - t)**2 * p1[1] + 2 * (1 - t) * t * p2[1] + t**2 * p3[1]
-            next_t = (t + 1/steps)
-            next_x = (1 - next_t)**2 * p1[0] + 2 * (1 - next_t) * next_t * p2[0] + next_t**2 * p3[0]
-            next_y = (1 - next_t)**2 * p1[1] + 2 * (1 - next_t) * next_t * p2[1] + next_t**2 * p3[1]
-
-            # Apply zoom to Bézier curve points
-            zoomed_x = x * self.zoom_level + self.canvas_offset_x
-            zoomed_y = y * self.zoom_level + self.canvas_offset_y
-            zoomed_next_x = next_x * self.zoom_level + self.canvas_offset_x
-            zoomed_next_y = next_y * self.zoom_level + self.canvas_offset_y
-
-            self.canvas.create_line(zoomed_x, zoomed_y, zoomed_next_x, zoomed_next_y, fill='green', width=2, tags="grid")
-
-    def toggle_curves(self):
-        """Toggle between straight lines and curves."""
-        self.curve_mode = not self.curve_mode
+    def add_selection_set(self):
+        """Add a new selection set."""
+        selection_set = {'points': [], 'texture': None}
+        self.selection_sets.append(selection_set)
+        self.current_selection_set_index = len(self.selection_sets) - 1
+        self.selected_point = None
         self.draw_grid()
+        messagebox.showinfo("Info", f"Added new selection set {self.current_selection_set_index + 1}")
+
+    def prev_selection_set(self):
+        """Switch to the previous selection set."""
+        if self.selection_sets and self.current_selection_set_index > 0:
+            self.current_selection_set_index -= 1
+            self.selected_point = None
+            self.draw_grid()
+        else:
+            messagebox.showinfo("Info", "No previous selection set.")
+
+    def next_selection_set(self):
+        """Switch to the next selection set."""
+        if self.selection_sets and self.current_selection_set_index < len(self.selection_sets) - 1:
+            self.current_selection_set_index += 1
+            self.selected_point = None
+            self.draw_grid()
+        else:
+            messagebox.showinfo("Info", "No next selection set.")
 
     def add_or_select_point(self, event):
-        """Add a point or select a point (primary or secondary) to drag."""
-        x = (event.x - self.canvas_offset_x) / self.zoom_level
-        y = (event.y - self.canvas_offset_y) / self.zoom_level
+        """Add a point or select a point to drag."""
+        if self.current_selection_set_index is None:
+            messagebox.showwarning("Warning", "Please add a selection set first.")
+            return
+
+        selection_set = self.selection_sets[self.current_selection_set_index]
+        points = selection_set['points']
+
+        x, y = self.canvas_to_image_coords(event.x, event.y)
+
+        # Constrain the point within the image boundaries
+        x = max(0, min(x, self.img_width))
+        y = max(0, min(y, self.img_height))
 
         # If there are less than 4 points, add new points
-        if len(self.points) < 4:
-            self.points.append((x, y))
-            self.draw_grid()  # Draw point immediately
+        if len(points) < 4:
+            points.append((x, y))
+            self.draw_grid()
         else:
-            # Otherwise, check if a primary or secondary point is selected for dragging
-            for i, point in enumerate(self.points):
-                if abs(point[0] - x) < 10 and abs(point[1] - y) < 10:
-                    self.selected_point = ('primary', i)
-                    return
-            for i, sec_point in self.secondary_points.items():
-                if abs(sec_point[0] - x) < 10 and abs(sec_point[1] - y) < 10:
-                    self.selected_point = ('secondary', i)
+            # Otherwise, check if a primary point is selected for dragging
+            for i, point in enumerate(points):
+                canvas_x, canvas_y = self.image_to_canvas_coords(*point)
+                if abs(canvas_x - event.x) < 10 and abs(canvas_y - event.y) < 10:
+                    self.selected_point = i
                     return
 
     def drag_point(self, event):
         """Drag the selected point."""
+        if self.current_selection_set_index is None:
+            return
+
+        selection_set = self.selection_sets[self.current_selection_set_index]
+        points = selection_set['points']
+
         if self.selected_point is not None:
-            point_type, index = self.selected_point
-            x = (event.x - self.canvas_offset_x) / self.zoom_level
-            y = (event.y - self.canvas_offset_y) / self.zoom_level
+            index = self.selected_point
+            x, y = self.canvas_to_image_coords(event.x, event.y)
 
-            # Constrain the point within the canvas (image) boundaries
-            x = max(0, min(x, self.canvas_width))
-            y = max(0, min(y, self.canvas_height))
+            # Constrain the point within the image boundaries
+            x = max(0, min(x, self.img_width))
+            y = max(0, min(y, self.img_height))
 
-            if point_type == 'primary':
-                self.points[index] = (x, y)
-            elif point_type == 'secondary':
-                # Secondary points are free to move and adjust the curve
-                self.secondary_points[index] = (x, y)
+            points[index] = (x, y)
             self.draw_grid()
 
     def release_point(self, event):
@@ -207,32 +250,57 @@ class TextureRipperApp:
         self.selected_point = None
 
     def clear_points(self):
-        """Clear the selected points."""
-        self.points = []
-        self.secondary_points = {}
-        self.canvas.delete("grid")
-        self.display_image()
+        """Clear the selected points in the current selection set."""
+        if self.current_selection_set_index is not None:
+            self.selection_sets[self.current_selection_set_index]['points'] = []
+            self.canvas.delete("grid")
+            self.display_image()
+        else:
+            messagebox.showwarning("Warning", "No selection set to clear.")
+
+    def clear_map(self):
+        """Clear the extracted textures and reset the map."""
+        for selection_set in self.selection_sets:
+            selection_set['texture'] = None
+        self.map_image = None
+        self.extracted_canvas.delete("all")
+        messagebox.showinfo("Info", "Texture map cleared.")
 
     def zoom_image(self, event):
         """Zoom in or out based on the mouse wheel while Control is held."""
         if self.zoom_active:
-            # Calculate the zoom factor
-            zoom_factor = 1.1 if event.delta > 0 else 0.9
+            # For Windows and MacOS
+            if hasattr(event, 'delta'):
+                if event.delta > 0:
+                    zoom_factor = 1.1
+                else:
+                    zoom_factor = 0.9
+            else:
+                # For Linux
+                if event.num == 4:
+                    zoom_factor = 1.1
+                elif event.num == 5:
+                    zoom_factor = 0.9
+                else:
+                    return
 
-            # Prevent zooming out past the original size
-            if zoom_factor * self.zoom_level < 1.0:
-                zoom_factor = 1.0 / self.zoom_level  # Reset to original size
+            new_zoom_level = self.zoom_level * zoom_factor
 
-            # Zoom relative to the current mouse position
-            mouse_x = self.canvas.canvasx(event.x)
-            mouse_y = self.canvas.canvasy(event.y)
+            # Limit zoom levels
+            if new_zoom_level < 0.1 or new_zoom_level > 10:
+                return
 
-            # Adjust zoom level and offsets
-            self.zoom_level *= zoom_factor
-            self.canvas_offset_x = mouse_x - zoom_factor * (mouse_x - self.canvas_offset_x)
-            self.canvas_offset_y = mouse_y - zoom_factor * (mouse_y - self.canvas_offset_y)
+            # Get mouse position in image coordinates
+            mouse_x, mouse_y = self.canvas_to_image_coords(event.x, event.y)
 
-            # Redraw the image and points
+            # Update zoom level
+            self.zoom_level = new_zoom_level
+
+            # Adjust canvas offsets to keep the image centered at the cursor
+            canvas_mouse_x, canvas_mouse_y = self.image_to_canvas_coords(mouse_x, mouse_y)
+            self.canvas_offset_x += event.x - canvas_mouse_x
+            self.canvas_offset_y += event.y - canvas_mouse_y
+
             self.display_image()
 
     def enable_zoom_mode(self, event):
@@ -244,13 +312,13 @@ class TextureRipperApp:
         self.zoom_active = False
 
     def start_pan(self, event):
-        """Start panning when the middle mouse button is pressed."""
+        """Start panning when the middle or right mouse button is pressed."""
         self.pan_start_x = event.x
         self.pan_start_y = event.y
         self.is_panning = True
 
     def pan_image(self, event):
-        """Pan the image by dragging with the middle mouse button."""
+        """Pan the image by dragging with the middle or right mouse button."""
         if self.is_panning:
             delta_x = event.x - self.pan_start_x
             delta_y = event.y - self.pan_start_y
@@ -261,7 +329,7 @@ class TextureRipperApp:
             self.display_image()
 
     def end_pan(self, event):
-        """End panning when the middle mouse button is released."""
+        """End panning when the middle or right mouse button is released."""
         self.is_panning = False
 
     def reset_view(self):
@@ -271,54 +339,156 @@ class TextureRipperApp:
         self.canvas_offset_y = 0
         self.display_image()
 
+    def order_points(self, pts):
+        """Order points in the following order: top-left, top-right, bottom-right, bottom-left."""
+        rect = np.zeros((4, 2), dtype="float32")
+
+        # Sum and diff of points
+        s = pts.sum(axis=1)
+        diff = np.diff(pts, axis=1)
+
+        rect[0] = pts[np.argmin(s)]  # Top-left has smallest sum
+        rect[2] = pts[np.argmax(s)]  # Bottom-right has largest sum
+        rect[1] = pts[np.argmin(diff)]  # Top-right has smallest difference
+        rect[3] = pts[np.argmax(diff)]  # Bottom-left has largest difference
+
+        return rect
+
     def extract_texture(self):
         """Extract the texture using the selected quadrilateral points."""
-        if len(self.points) != 4:
-            print("Please select exactly 4 points.")
+        if self.current_selection_set_index is None:
+            messagebox.showwarning("Warning", "Please add a selection set first.")
             return
 
-        # Convert canvas coordinates back to original image coordinates
+        selection_set = self.selection_sets[self.current_selection_set_index]
+        points = selection_set['points']
+
+        if len(points) != 4:
+            messagebox.showwarning("Warning", "Please select exactly 4 points.")
+            return
+
+        if not self.image_path:
+            messagebox.showerror("Error", "No image loaded.")
+            return
+
         src_img = cv2.imread(self.image_path)
-        h_ratio, w_ratio = src_img.shape[0] / 600, src_img.shape[1] / 800
-        src_points = np.array([[x * w_ratio, y * h_ratio] for x, y in self.points], dtype='float32')
+        if src_img is None:
+            messagebox.showerror("Error", "Failed to load the image for processing.")
+            return
 
-        # Define destination points for perspective transform (a rectangle)
-        width = int(np.linalg.norm(src_points[0] - src_points[1]))  # Approximate width of the texture
-        height = int(np.linalg.norm(src_points[0] - src_points[3]))  # Approximate height of the texture
-        dst_points = np.array([[0, 0], [width, 0], [width, height], [0, height]], dtype='float32')
+        # Convert the image to RGB
+        src_img_rgb = cv2.cvtColor(src_img, cv2.COLOR_BGR2RGB)
 
-        # Perform perspective transform (based on selected points)
-        matrix = cv2.getPerspectiveTransform(src_points, dst_points)
-        extracted_texture = cv2.warpPerspective(src_img, matrix, (width, height))
+        # Use perspective transform for quadrilateral
+        src_pts = np.array(points, dtype=np.float32)
+        src_pts = self.order_points(src_pts)
 
-        # Convert to a PIL Image and display it on the extracted canvas
-        self.extracted_image = Image.fromarray(cv2.cvtColor(extracted_texture, cv2.COLOR_BGR2RGB))
-        self.display_extracted_image(self.extracted_image)
+        # Determine the size of the output image
+        (tl, tr, br, bl) = src_pts
 
-    def display_extracted_image(self, img):
-        """Display the extracted image while maintaining its aspect ratio."""
-        # Calculate aspect ratio and fit the image to the extracted canvas (400x400)
-        canvas_width, canvas_height = 400, 400
-        img_width, img_height = img.size
-        ratio = min(canvas_width / img_width, canvas_height / img_height)
-        new_width = int(img_width * ratio)
-        new_height = int(img_height * ratio)
+        width_top = np.linalg.norm(tr - tl)
+        width_bottom = np.linalg.norm(br - bl)
+        max_width = int(max(width_top, width_bottom))
 
-        # Resize while preserving aspect ratio
-        img_resized = img.resize((new_width, new_height), Image.LANCZOS)
-        extracted_image_tk = ImageTk.PhotoImage(img_resized)
+        height_left = np.linalg.norm(bl - tl)
+        height_right = np.linalg.norm(br - tr)
+        max_height = int(max(height_left, height_right))
 
-        # Clear the canvas and display the resized image
-        self.extracted_canvas.delete("all")
-        self.extracted_canvas.create_image((canvas_width - new_width) // 2, (canvas_height - new_height) // 2, anchor=tk.NW, image=extracted_image_tk)
-        self.extracted_canvas.image = extracted_image_tk  # Keep reference
+        dst_pts = np.array([
+            [0, 0],
+            [max_width - 1, 0],
+            [max_width - 1, max_height - 1],
+            [0, max_height - 1]
+        ], dtype=np.float32)
 
-    def save_extracted_texture(self):
-        """Save the currently displayed extracted texture to a user-specified location."""
-        if self.extracted_image:
-            file_path = filedialog.asksaveasfilename(defaultextension=".png", filetypes=[("PNG Files", "*.png"), ("JPEG Files", "*.jpg;*.jpeg")])
+        # Compute the perspective transform matrix
+        M = cv2.getPerspectiveTransform(src_pts, dst_pts)
+
+        # Warp the image using the perspective transform
+        warped = cv2.warpPerspective(src_img_rgb, M, (max_width, max_height))
+
+        # Convert back to PIL Image and store in the selection set
+        extracted_image = Image.fromarray(warped)
+        selection_set['texture'] = extracted_image
+
+        # Update the texture map
+        self.update_texture_map()
+
+        # Points remain for further editing
+
+    def update_texture_map(self):
+        """Update the composite texture map with all extracted textures."""
+        textures = [s['texture'] for s in self.selection_sets if s['texture'] is not None]
+        if not textures:
+            return
+
+        # Define the map dimensions
+        # For simplicity, we'll arrange textures in a grid
+        texture_widths = [img.width for img in textures]
+        texture_heights = [img.height for img in textures]
+        max_texture_width = max(texture_widths)
+        max_texture_height = max(texture_heights)
+
+        # Calculate grid size
+        num_textures = len(textures)
+        grid_cols = int(np.ceil(np.sqrt(num_textures)))
+        grid_rows = int(np.ceil(num_textures / grid_cols))
+
+        map_width = grid_cols * max_texture_width
+        map_height = grid_rows * max_texture_height
+
+        # Create a new blank image for the map
+        self.map_image = Image.new('RGB', (map_width, map_height), color=(0, 0, 0))
+
+        # Paste each texture into the map
+        for idx, texture in enumerate(textures):
+            row = idx // grid_cols
+            col = idx % grid_cols
+            x_offset = col * max_texture_width
+            y_offset = row * max_texture_height
+
+            # Center the texture in the grid cell
+            x_center = x_offset + (max_texture_width - texture.width) // 2
+            y_center = y_offset + (max_texture_height - texture.height) // 2
+
+            self.map_image.paste(texture, (x_center, y_center))
+
+        # Display the updated texture map
+        self.display_texture_map()
+
+    def display_texture_map(self):
+        """Display the texture map on the extracted canvas."""
+        if self.map_image:
+            # Calculate aspect ratio and fit the image to the extracted canvas (400x400)
+            canvas_width, canvas_height = 400, 400
+            map_width, map_height = self.map_image.size
+            ratio = min(canvas_width / map_width, canvas_height / map_height)
+            new_width = int(map_width * ratio)
+            new_height = int(map_height * ratio)
+
+            # Resize while preserving aspect ratio
+            img_resized = self.map_image.resize((new_width, new_height), Image.LANCZOS)
+            extracted_image_tk = ImageTk.PhotoImage(img_resized)
+
+            # Clear the canvas and display the resized image
+            self.extracted_canvas.delete("all")
+            self.extracted_canvas.create_image((canvas_width - new_width) // 2, (canvas_height - new_height) // 2,
+                                               anchor=tk.NW, image=extracted_image_tk)
+            self.extracted_canvas.image = extracted_image_tk  # Keep reference
+
+    def save_texture_map(self):
+        """Save the texture map to a user-specified location."""
+        if self.map_image:
+            file_path = filedialog.asksaveasfilename(defaultextension=".png",
+                                                     filetypes=[("PNG Files", "*.png"), ("JPEG Files", "*.jpg;*.jpeg")])
             if file_path:
-                self.extracted_image.save(file_path)
+                try:
+                    self.map_image.save(file_path)
+                    messagebox.showinfo("Success", "Texture map saved successfully.")
+                except Exception as e:
+                    messagebox.showerror("Error", f"Failed to save texture map:\n{e}")
+        else:
+            messagebox.showwarning("Warning", "No texture map to save.")
 
 if __name__ == "__main__":
     root = tk.Tk()
