@@ -29,3 +29,39 @@ A misguided attempt to recreate the Texture Ripper tool from ShoeBox with the po
 - **Zoom and Pan:**
     - Hold the Control key and use the mouse wheel to zoom.
     - Use the middle or right mouse button to pan.
+
+# Installation:
+
+**Python:**
+
+**1: Clone the repository in the desired location:**
+`git clone https://github.com/rpalmerdev/Texture-Ripper.git`
+
+**2: Create a Virtual Environment (Optional but Recommended):**
+
+- **Open a terminal or command prompt.**
+    
+- **Navigate** to the directory where you saved `texture_ripper.py`.
+    
+- **Create** a virtual environment by running:
+  `python -m venv venv`
+  
+- **Activate** the virtual environment:
+  On **Windows**:
+  `venv\Scripts\activate`
+  On **macOS/Linux**:
+  `source venv/bin/activate`
+
+**3: Install the Required Dependencies:**
+- Using Pip:
+  `pip install -r requirements.txt`
+
+**4: Run the Application:**
+`python texture_ripper.py
+
+**OR** download the binary from the [Releases](https://github.com/rpalmerdev/Texture-Ripper/releases/tag/v1.0.0) page. (Windows)
+
+# Limitations:
+
+- Currently does not support using curved lines for texture extraction like ShoeBox does.
+- I should have implemented a dark/light mode toggle, but I didn't. Coming soon™.
