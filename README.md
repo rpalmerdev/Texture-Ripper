@@ -1,5 +1,11 @@
 # Texture-Ripper
-A misguided attempt to recreate the Texture Ripper tool from ShoeBox with the power of ChatGPT
+A misguided attempt to recreate the Texture Ripper tool from [ShoeBox](https://renderhjs.net/shoebox/) with the power of ChatGPT.
+
+No, that doesn't mean AI assisted texture extraction. It means **I don't know how to code.**
+
+If I could still use ShoeBox, I would. It is/was an amazing program, it just doesn't really work on my computer anymore.
+
+This is **not** an amazing program, but it gets the job done, more-or-less. 
 
 ![2024-09-18 10_17_20-Settings](https://github.com/user-attachments/assets/17da90ec-4a2d-43b1-bd3f-53facecc2e92)
 
