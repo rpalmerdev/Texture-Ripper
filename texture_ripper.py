@@ -44,32 +44,39 @@ class TextureRipperApp:
         self.button_frame = tk.Frame(root)
         self.button_frame.pack(side=tk.TOP, pady=10)
 
-        # Buttons
-        self.load_button = tk.Button(self.button_frame, text="Load Image", command=self.load_image)
+        # First row buttons
+        self.first_row_frame = tk.Frame(self.button_frame)
+        self.first_row_frame.pack(side=tk.TOP, pady=5)
+
+        self.load_button = tk.Button(self.first_row_frame, text="Load Image", command=self.load_image)
         self.load_button.pack(side=tk.LEFT, padx=5)
 
-        self.add_selection_set_button = tk.Button(self.button_frame, text="Add Selection Set", command=self.add_selection_set)
+        self.add_selection_set_button = tk.Button(self.first_row_frame, text="Add Selection Set", command=self.add_selection_set)
         self.add_selection_set_button.pack(side=tk.LEFT, padx=5)
 
-        self.prev_selection_set_button = tk.Button(self.button_frame, text="Previous Set", command=self.prev_selection_set)
+        self.prev_selection_set_button = tk.Button(self.first_row_frame, text="Previous Set", command=self.prev_selection_set)
         self.prev_selection_set_button.pack(side=tk.LEFT, padx=5)
 
-        self.next_selection_set_button = tk.Button(self.button_frame, text="Next Set", command=self.next_selection_set)
+        self.next_selection_set_button = tk.Button(self.first_row_frame, text="Next Set", command=self.next_selection_set)
         self.next_selection_set_button.pack(side=tk.LEFT, padx=5)
 
-        self.extract_button = tk.Button(self.button_frame, text="Extract Texture", command=self.extract_texture)
+        # Second row buttons
+        self.second_row_frame = tk.Frame(self.button_frame)
+        self.second_row_frame.pack(side=tk.TOP, pady=5)
+
+        self.extract_button = tk.Button(self.second_row_frame, text="Extract Texture", command=self.extract_texture)
         self.extract_button.pack(side=tk.LEFT, padx=5)
 
-        self.save_button = tk.Button(self.button_frame, text="Save As", command=self.save_texture_map)
+        self.save_button = tk.Button(self.second_row_frame, text="Save As", command=self.save_texture_map)
         self.save_button.pack(side=tk.LEFT, padx=5)
 
-        self.reset_button = tk.Button(self.button_frame, text="Reset View", command=self.reset_view)
+        self.reset_button = tk.Button(self.second_row_frame, text="Reset View", command=self.reset_view)
         self.reset_button.pack(side=tk.LEFT, padx=5)
 
-        self.clear_points_button = tk.Button(self.button_frame, text="Clear Points", command=self.clear_points)
+        self.clear_points_button = tk.Button(self.second_row_frame, text="Clear Points", command=self.clear_points)
         self.clear_points_button.pack(side=tk.LEFT, padx=5)
 
-        self.clear_map_button = tk.Button(self.button_frame, text="Clear Map", command=self.clear_map)
+        self.clear_map_button = tk.Button(self.second_row_frame, text="Clear Map", command=self.clear_map)
         self.clear_map_button.pack(side=tk.LEFT, padx=5)
 
         # Bind mouse events for adding points, panning, zooming, and dragging
@@ -119,6 +126,9 @@ class TextureRipperApp:
         self.canvas.config(width=self.canvas_width, height=self.canvas_height)
 
         self.display_image()
+
+        # Automatically add the first selection set
+        self.add_selection_set(first_set=True)
 
     def display_image(self):
         """Display the image on the canvas, accounting for zoom and panning."""
@@ -172,14 +182,15 @@ class TextureRipperApp:
                     self.canvas.create_line(canvas_x1, canvas_y1, canvas_x2, canvas_y2,
                                             fill='green', width=2, tags="grid")
 
-    def add_selection_set(self):
+    def add_selection_set(self, first_set=False):
         """Add a new selection set."""
         selection_set = {'points': [], 'texture': None}
         self.selection_sets.append(selection_set)
         self.current_selection_set_index = len(self.selection_sets) - 1
         self.selected_point = None
         self.draw_grid()
-        messagebox.showinfo("Info", f"Added new selection set {self.current_selection_set_index + 1}")
+        if not first_set:
+            messagebox.showinfo("Info", f"Added new selection set {self.current_selection_set_index + 1}")
 
     def prev_selection_set(self):
         """Switch to the previous selection set."""
@@ -202,7 +213,7 @@ class TextureRipperApp:
     def add_or_select_point(self, event):
         """Add a point or select a point to drag."""
         if self.current_selection_set_index is None:
-            messagebox.showwarning("Warning", "Please add a selection set first.")
+            messagebox.showwarning("Warning", "Please load an image first.")
             return
 
         selection_set = self.selection_sets[self.current_selection_set_index]
@@ -357,7 +368,7 @@ class TextureRipperApp:
     def extract_texture(self):
         """Extract the texture using the selected quadrilateral points."""
         if self.current_selection_set_index is None:
-            messagebox.showwarning("Warning", "Please add a selection set first.")
+            messagebox.showwarning("Warning", "Please load an image first.")
             return
 
         selection_set = self.selection_sets[self.current_selection_set_index]
